@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
 import os
 import boto3
-from azure.storage.blob import BlobServiceClient
+from azure.identity import DefaultAzureCredential
+from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
 import paramiko
 from ftplib import FTP
 from pydantic import BaseModel, Field
