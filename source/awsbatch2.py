@@ -158,7 +158,7 @@ def isfastqgz(filename):
 def replace_extension(filename, ext):
     # Pattern to match either .fq.gz or .fastq.gz
     pattern = r"\.f(ast)?q\.gz$"
-    # Replace the matched pattern with .bam
+    # Replace the matched pattern with the extension
     return re.sub(pattern, ext, filename)
 
 
