@@ -1,4 +1,5 @@
 import os
+import re
 from Storage import Storage, StorageConfig
 from azure.identity import DefaultAzureCredential
 from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
@@ -50,3 +51,12 @@ class AzureBlobStorage(Storage):
     def delete(self, path):
         blob_client = self.container_client.get_blob_client(path)
         return self.retry_operation(lambda: blob_client.delete_blob())
+
+    def _find_files_in_storage(self, path, regex_pattern):
+        matching_files = []
+        blob_list = self.container_client.list_blobs(name_starts_with=path)
+        for blob in blob_list:
+            if re.match(regex_pattern, blob.name):
+                matching_files.append(blob.name)
+        return matching_files
+    

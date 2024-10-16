@@ -1,4 +1,5 @@
 from Storage import Storage, StorageConfig
+import re
 import os
 import boto3
 
@@ -6,7 +7,11 @@ class S3Storage(Storage):
     def __init__(self, config: StorageConfig):
         if config.auth_method == 'oauth':
             # Use OAuth token for authentication
-            self.s3 = boto3.client('s3', aws_session_token=config.oauth_token)
+            self.s3 = boto3.client(
+                's3', 
+                config.access_key_id,
+                config.secret_access_key
+            )
         else:
             # Use default authentication
             self.s3 = boto3.client('s3')
@@ -71,3 +76,26 @@ class S3Storage(Storage):
 
     def delete(self, path):
         return self.retry_operation(lambda: self.s3.delete_object(Bucket=self.bucket_name, Key=path))
+
+    def _find_files_in_storage(self, path, regex_pattern):
+        matching_files = []
+        response = self.s3.list_objects_v2(Bucket=self.bucket_name, Prefix=path)
+        if 'Contents' in response:
+            for obj in response['Contents']:
+                if re.match(regex_pattern, obj['Key']):
+                    matching_files.append(obj['Key'])
+        return matching_files
+    
+if __name__ == '__main__':
+    my_secret_access_key = r'1JFvNKLTzOx/isf+bDzuN6XSk/0H4QjCxTm8njDg'
+    my_access_key_ID = 'AKIA4JUWHVLAZXBG6NIZ'
+    my_bucket_name = 'rawdata_samples'
+
+    config = StorageConfig(
+        auth_method='oauth',
+        access_key_id='AKIA4JUWHVLAZXBG6NIZ',
+        secret_access_key='1JFvNKLTzOx/isf+bDzuN6XSk/0H4QjCxTm8njDg',
+        bucket_name=my_bucket_name
+    )
+
+    s3s = S3Storage(config)

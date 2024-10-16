@@ -1,4 +1,5 @@
 import os
+import re
 from Storage import Storage
 
 class FileSystemStorage(Storage):
@@ -24,3 +25,11 @@ class FileSystemStorage(Storage):
 
     def delete(self, path):
         os.remove(path)
+
+    def _find_files_in_storage(self, path, regex_pattern):
+        matching_files = []
+        for root, dirs, files in os.walk(path):
+            for file in files:
+                if re.match(regex_pattern, file):
+                    matching_files.append(os.path.join(root, file))
+        return matching_files
