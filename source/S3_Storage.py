@@ -5,8 +5,8 @@ import boto3
 
 class S3Storage(Storage):
     def __init__(self, config: StorageConfig):
-        if config.auth_method == 'oauth':
-            # Use OAuth token for authentication
+        if config.auth_method == 'access_key':
+            # Use access key for authentication
             self.s3 = boto3.client(
                 's3', 
                 config.access_key_id,
@@ -92,7 +92,7 @@ if __name__ == '__main__':
     my_bucket_name = 'rawdata_samples'
 
     config = StorageConfig(
-        auth_method='oauth',
+        auth_method='access_key',
         access_key_id='AKIA4JUWHVLAZXBG6NIZ',
         secret_access_key='1JFvNKLTzOx/isf+bDzuN6XSk/0H4QjCxTm8njDg',
         bucket_name=my_bucket_name

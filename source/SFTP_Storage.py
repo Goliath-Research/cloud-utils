@@ -4,12 +4,15 @@ from Storage import Storage, StorageConfig
 import paramiko
 
 class SFTPStorage(Storage):
+    ''''SFTP storage class'''
+    
     def __init__(self, config: StorageConfig):
         self.transport = paramiko.Transport((config.host, config.port))
         if config.auth_method == 'username_password':
             self.transport.connect(username=config.username, password=config.password)
-        elif config.auth_method == 'oauth':
-            raise NotImplementedError("OAuth authentication is not supported for SFTP")
+        else:
+            self.transport.connect(username='anonymous', password='someone@mail.com')
+
         self.sftp = paramiko.SFTPClient.from_transport(self.transport)
 
     def read(self, path, local_path):
