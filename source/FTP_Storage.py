@@ -39,20 +39,41 @@ class FTPStorage(Storage):
 
     def _find_files_in_storage(self, path, regex_pattern):
         matching_files = []
-        def recursive_ftp_walk(current_path):
-            try:
-                self.ftp.cwd(current_path)
-                items = self.ftp.nlst()
-                for item in items:
-                    try:
-                        self.ftp.cwd(item)  # If successful, it's a directory
-                        recursive_ftp_walk(os.path.join(current_path, item))
-                    except Exception:
-                        # If cwd fails, it's a file
-                        if re.match(regex_pattern, item):
-                            matching_files.append(os.path.join(current_path, item))
-            except Exception as e:
-                print(f"Error while walking FTP path {current_path}: {e}")
-        
-        recursive_ftp_walk(path)
+
+        def ftp_walk(current_path):
+            items = self.ftp.nlst()
+            for item in items:
+                try:
+                    new_path = os.path.join(current_path, item).replace('\\', '/')
+
+                    # Attempt to get the size of the item, if it fails, it's a directory
+                    self.ftp.size(item)
+
+                    # If size() succeeds, it's a file
+                    if re.match(regex_pattern, item):
+                        matching_files.append(new_path)
+                except Exception:
+                    # If size() fails, it's a directory, so walk it recursively
+                    self.ftp.cwd(item)
+                    ftp_walk(new_path) 
+
+        ftp_path = os.path.normpath(path).replace('\\', '/')
+        self.ftp.cwd(ftp_path)
+
+        ftp_walk(ftp_path)
         return matching_files
+
+if __name__ == "__main__":
+    config = StorageConfig(
+        auth_method="username_password",
+        username="anonymous",
+        password="dizada@epimethyl.com",
+        host="ftp.sra.ebi.ac.uk"
+    )
+
+    ftp = FTPStorage(config)
+
+    fastq_files = ftp.find_files("vol1/fastq/SRR811", r".*\.(fq|fastq)\.gz$")
+    for fq in fastq_files:
+        test, sample = os.path.basename(fq), os.path.basename(os.path.dirname(fq))
+        ftp.read(fq, os.path.normpath(os.path.join(sample, test)))

@@ -2,11 +2,8 @@ from abc import ABC, abstractmethod
 from pydantic import BaseModel
 from typing import Optional
 
-
 class StorageConfig(BaseModel):
-    auth_method: (
-        str  # 'username_password', 'access_key', 'oauth', 'connection_string', 'none'
-    )
+    auth_method: str                # 'username_password', 'access_key', 'oauth', 'connection_string', 'none'
     username: Optional[str] = None
     password: Optional[str] = None
     access_key_id: Optional[str] = None
@@ -19,7 +16,7 @@ class StorageConfig(BaseModel):
     bucket_name: Optional[str] = None
 
 class Storage(ABC):
-    """
+    '''
     Abstract class for storage operations.
     Concrete implementations should inherit from this class and implement the read, write, delete, and _find_files_in_storage methods.
     Concrete implementations should also implement the __init__ method to initialize the storage client.
@@ -27,10 +24,10 @@ class Storage(ABC):
     1. FileSystemStorage
     2. FTPStorage
     3. SFTPStorage
-    4. S3Storage
+    4. S3Storage 
     5. AzureBlobStorage
     The StorageConfig class is used to pass configuration parameters to the storage client.
-    """
+    '''
 
     @abstractmethod
     def read(self, path, local_path):
