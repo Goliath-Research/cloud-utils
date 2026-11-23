@@ -162,48 +162,74 @@ def replace_extension(filename, ext):
     return re.sub(pattern, ext, filename)
 
 
+FASTQ_READ1_PATTERN = re.compile(r"^(?P<stem>.+)_1(?P<ext>\.f(?:ast)?q\.gz)$")
+
+
+# Par de lecturas de una muestra junto con su directorio relativo al
+# directorio de datos. Dos muestras con el mismo nombre en directorios
+# distintos son muestras distintas, así que cada paso escribe sus resultados
+# bajo <step_dir>/<relative_dir>.
+class Sample(tuple):
+    def __new__(cls, read1, read2, relative_dir):
+        sample = super().__new__(cls, (read1, read2))
+        sample.relative_dir = relative_dir
+        return sample
+
+
+def sample_output_dir(sample, step_dir):
+    return os.path.normpath(os.path.join(step_dir, sample.relative_dir))
+
+
+def read_stem(path):
+    return replace_extension(os.path.basename(path), "")
+
+
 # Función para obtener las muestras de un directorio dado
-# El resultado es una lista de tuplas con las dos muestras
-# (<muestra>_1.fq.gz y <muestra>_2.fq.gz)
+# El resultado es una lista de Sample con las dos muestras
+# (<muestra>_1.fq.gz y <muestra>_2.fq.gz, o .fastq.gz)
 def get_samples(directory):
     samples = []
     for root, _, files in os.walk(directory):
-        fq_files_1 = [
-            f
-            for f in files
-            if replace_extension(f, ".fastq.gz").endswith("_1.fastq.gz")
-        ]
-        for f1 in fq_files_1:
-            f2 = f1.replace("_1.fastq.gz", "_2.fastq.gz")
-            if f2 in files:
-                samples.append((os.path.join(root, f1), os.path.join(root, f2)))
+        relative_dir = os.path.relpath(root, directory)
+        stems = {}
+        for f1 in sorted(files):
+            match = FASTQ_READ1_PATTERN.match(f1)
+            if match is None:
+                continue
+            f2 = f"{match.group('stem')}_2{match.group('ext')}"
+            if f2 not in files:
+                continue
+            # trim_galore names its outputs after the read without its
+            # extension, so X_1.fq.gz and X_1.fastq.gz would share outputs.
+            stem = match.group("stem")
+            if stem in stems:
+                raise ValueError(
+                    f"Samples {stems[stem]} and {f1} in {root} would produce "
+                    "the same output files"
+                )
+            stems[stem] = f1
+            samples.append(
+                Sample(os.path.join(root, f1), os.path.join(root, f2), relative_dir)
+            )
     return samples
 
 
-def create_trim_galore_outputs(sample1, sample2, output_dir):
-    # Generate output filenames by replacing the input file extensions
-    output1 = sample1.replace(".fastq.gz", "_val_1.fq.gz")
-    output2 = sample2.replace(".fastq.gz", "_val_2.fq.gz")
-
-    # Get the base filenames (without directory paths)
-    output1filename = os.path.basename(output1)
-    output2filename = os.path.basename(output2)
-
-    # Join the base filenames with the output directory to get full paths
-    output1path = os.path.join(output_dir, output1filename)
-    output2path = os.path.join(output_dir, output2filename)
-
-    # Return the full paths
+def create_trim_galore_outputs(sample, output_dir):
+    sample1, sample2 = sample
+    output1path = os.path.join(output_dir, f"{read_stem(sample1)}_val_1.fq.gz")
+    output2path = os.path.join(output_dir, f"{read_stem(sample2)}_val_2.fq.gz")
     return output1path, output2path
 
 
 # Paso 1: Ejecuta trim_galore para cada muestra
 def execute_trim_galore(samples, config_dir, output_dir):
-    output_dir = f"{output_dir}/out_trim"
+    step_dir = f"{output_dir}/out_trim"
     i = 0
-    for sample1, sample2 in samples:
+    for sample in samples:
+        sample1, sample2 = sample
+        output_dir = sample_output_dir(sample, step_dir)
         # Verifica si los archivos de salida de trim_galore ya existen
-        output1, output2 = create_trim_galore_outputs(sample1, sample2, output_dir)
+        output1, output2 = create_trim_galore_outputs(sample, output_dir)
         if not file_exists(output1) or not file_exists(output2):
             i += 1
             json_path = os.path.join(config_dir, f"{i}-trim_galore.json")
@@ -221,26 +247,19 @@ def execute_trim_galore(samples, config_dir, output_dir):
 
 
 def create_bismark_output(sample, output_dir):
-    # Generate output filenames by replacing the input file extensions
-    output = sample.replace(".fastq.gz", "_val_1_bismark_bt2_pe.bam")
-
-    # Get the base filename (without directory path)
-    outputfilename = os.path.basename(output)
-
-    # Join the base filename with the output directory to get full path
-    outputpath = os.path.join(output_dir, outputfilename)
-
-    # Return the full paths
-    return outputpath
+    sample1, _ = sample
+    return os.path.join(output_dir, f"{read_stem(sample1)}_val_1_bismark_bt2_pe.bam")
 
 
 # Paso 2: Ejecuta bismark para cada muestra procesada en trim_galore
 def execute_bismark(samples, config_dir, genome_dir, output_dir):
-    output_dir = f"{output_dir}/out_bismark"
+    step_dir = f"{output_dir}/out_bismark"
     i = 0
-    for sample1, sample2 in samples:
+    for sample in samples:
+        sample1, sample2 = sample
+        output_dir = sample_output_dir(sample, step_dir)
         # Verifica si los archivos de salida de bismark ya existen
-        bam_output = create_bismark_output(sample1, output_dir)
+        bam_output = create_bismark_output(sample, output_dir)
         if not file_exists(bam_output):
             i += 1
             json_path = os.path.join(config_dir, f"{i}-bismark.json")
@@ -259,27 +278,23 @@ def execute_bismark(samples, config_dir, genome_dir, output_dir):
 
 
 def create_deduplicate_bismark_output(sample, output_dir):
-    # Generate output filenames by replacing the input file extensions
-    output = sample.replace(".fastq.gz", "_val_1_bismark_bt2_pe.deduplicated.bam")
-
-    # Get the base filename (without directory path)
-    outputfilename = os.path.basename(output)
-
-    # Join the base filename with the output directory to get full path
-    outputpath = os.path.join(output_dir, outputfilename)
-
-    # Return the full paths
-    return outputpath
+    sample1, _ = sample
+    return os.path.join(
+        output_dir, f"{read_stem(sample1)}_val_1_bismark_bt2_pe.deduplicated.bam"
+    )
 
 
 # Paso 3: Ejecuta deduplicate_bismark para los archivos BAM generados
 def execute_deduplicate_bismark(samples, config_dir, output_dir):
-    input_dir = f"{output_dir}/out_bismark"
-    output_dir = f"{output_dir}/out_deduplicate"
+    input_step_dir = f"{output_dir}/out_bismark"
+    step_dir = f"{output_dir}/out_deduplicate"
     i = 0
-    for sample1, _ in samples:
-        bam_file = create_bismark_output(sample1, input_dir)
-        deduplicated_bam = create_deduplicate_bismark_output(sample1, output_dir)
+    for sample in samples:
+        output_dir = sample_output_dir(sample, step_dir)
+        bam_file = create_bismark_output(
+            sample, sample_output_dir(sample, input_step_dir)
+        )
+        deduplicated_bam = create_deduplicate_bismark_output(sample, output_dir)
         if not file_exists(deduplicated_bam):
             i += 1
             json_path = os.path.join(config_dir, f"{i}-deduplicate_bismark.json")
@@ -296,26 +311,21 @@ def execute_deduplicate_bismark(samples, config_dir, output_dir):
 
 
 def create_bismark_methylation_extractor_output(deduplicated_bam_file, output_dir):
-    # Generate output filenames by replacing the input file extensions
-    output = deduplicated_bam_file.replace(".bam", ".CX_report.txt.gz")
-
-    # Get the base filename (without directory path)
-    outputfilename = os.path.basename(output)
-
-    # Join the base filename with the output directory to get full path
-    outputpath = os.path.join(output_dir, outputfilename)
-
-    # Return the full paths
-    return outputpath
+    bam_name = os.path.basename(deduplicated_bam_file)
+    report_name = re.sub(r"\.bam$", ".CX_report.txt.gz", bam_name)
+    return os.path.join(output_dir, report_name)
 
 
 # Paso 4: Ejecuta bismark_methylation_extractor para el archivo BAM final
 def execute_bismark_methylation_extractor(samples, config_dir, genome_dir, output_dir):
-    input_dir = f"{output_dir}/out_deduplicate"
-    output_dir = f"{output_dir}/out_report"
+    input_step_dir = f"{output_dir}/out_deduplicate"
+    step_dir = f"{output_dir}/out_report"
     i = 0
-    for sample, _ in samples:
-        deduplicated_bam_file = create_deduplicate_bismark_output(sample, input_dir)
+    for sample in samples:
+        output_dir = sample_output_dir(sample, step_dir)
+        deduplicated_bam_file = create_deduplicate_bismark_output(
+            sample, sample_output_dir(sample, input_step_dir)
+        )
         methylation_output = create_bismark_methylation_extractor_output(
             deduplicated_bam_file, output_dir
         )
